@@ -8,11 +8,12 @@ Function DisplayMenu() { # Main Menu of the script
           $choice = Read-Host -Prompt "Please select one of the following options:`n
                 [0]     Export list of mailboxes
                 [1]     Export folder sizes for a mailbox
-                [2]     Export distribution group members
-                [3]     Export delegate permissions list (Send As/Full Access)
-                [4]     Import contacts from CSV
-                [5]     Add members to distribution group from CSV
-                [6]     Add user delegate permissions to mailboxes from CSV
+                [2]     Export list of distribution groups
+                [3]     Export distribution group members
+                [4]     Export delegate permissions list (Send As/Full Access)
+                [5]     Import contacts from CSV
+                [6]     Add members to distribution group from CSV
+                [7]     Add user delegate permissions to mailboxes from CSV
                 [9999]  Enter custom Exchange Online commands in the current session (Advanced)
                 [E]     Exit script`n`n"
     
@@ -20,10 +21,11 @@ Function DisplayMenu() { # Main Menu of the script
                 0 { ExportMailboxList }
                 1 { ExportFolderSize }
                 2 { ExportDistListMembers }
-                3 { ExportDelegatePermissions }
-                4 { ImportContacts }
-                5 { ImportToDistList }
-                6 { ImportDelegates }
+                3 { ExportDistLists }
+                4 { ExportDelegatePermissions }
+                5 { ImportContacts }
+                6 { ImportToDistList }
+                7 { ImportDelegates }
                 E { $menuloop = $false 
                         ExitScript }
                 9999 { $menuloop = $false }
@@ -46,6 +48,7 @@ Function ExportMailboxList { # Exports Mailbox list to CSV file
             [0] Export ALL mailboxes
             [1] Export USER mailboxes only
             [2] Export SHARED mailboxes only
+            [E] Return to Main Menu
             "
         switch ($Option) {
             0 { 
@@ -74,6 +77,9 @@ Function ExportMailboxList { # Exports Mailbox list to CSV file
                 Get-Mailbox -ResultSize Unlimited -Filter {recipienttypedetails -eq "SharedMailbox"} | Select-Object DisplayName, PrimarySmtpAddress, recipienttypedetails, @{Name='Mailbox Size';Expression={Get-MailboxStatistics $_.UserPrincipalName | Select-Object TotalItemSize}} | Sort-Object PrimarySmtpAddress | Export-CSV $FilePath -NoTypeInformation -Encoding UTF8
                 Write-Host "Exported mailbox list to $FilePath" -ForegroundColor Green 
                 $exportloop = $false                
+            }
+            E {
+                $exportloop = $false
             }
             default{ 
                 Write-Host "`n"
@@ -120,11 +126,61 @@ Function ExportFolderSize {
 
 Function ExportDistListMembers { # Exports Distribution group members to CSV file
     Write-Host "`n"
-    $DGName = Read-Host -Prompt "Please enter the name of the distribution list you would like to export the members of"
+    $exportloop = $true
+    while($exportloop) {
+        $Option = Read-Host -Prompt "Please select one of the following options.
+            [0] Export members for ALL distribution lists
+            [1] Export delegate permissions for a particular distribution list
+            [E] Return to main menu
+            "
+        switch ($Option) { 
+            1 {
+                $DGName = Read-Host -Prompt "Please enter the name of the distribution list you would like to export the members of"
+                Write-Host "Exporting information, this could take some time..."
+                $FilePath = "$PSScriptRoot\Exported\$DGName-Members.csv"
+                Get-DistributionGroupMember -Identity $DGName | Select-Object Name, PrimarySMTPAddress | Export-CSV $FilePath -NoTypeInformation -Encoding UTF8
+                Write-Host "Exported members of $DGName to $FilePath" -ForegroundColor Green
+                Write-Host "`n"
+                $exportloop = $false
+            }
+            0 {
+                
+                Write-Host "Exporting information, this could take some time..."
+                
+
+                $DL = Get-DistributionGroup
+                ForEach ($List in $DL) {
+                    $DGEmail = $List.PrimarySMTPAddress
+                    $DGName = $List.DisplayName
+                    $FilePath = "$PSScriptRoot\Exported\$DGName-Members.csv"
+                    Get-DistributionGroupMember -Identity $DGEmail | Select-Object Name, PrimarySMTPAddress | Export-CSV $FilePath -NoTypeInformation -Encoding UTF8
+                    Write-Host "Exported members of $DGName to $FilePath" -ForegroundColor Green
+                }
+
+               # Get-DistributionGroupMember | Select-Object Name, PrimarySMTPAddress | Export-CSV $FilePath -NoTypeInformation -Encoding UTF8
+                Write-Host "Done" -ForegroundColor Green
+                Write-Host "`n"
+                $exportloop = $false
+            }
+            E {
+                $exportloop = $false
+            }
+            default {
+                Write-Host "`n"
+                Write-Warning "Sorry, I didn't understand that!" 
+                Write-Host "`n"                
+            }
+        }
+    }
+    
+}
+
+Function ExportDistLists {
+    Write-Host "`n"
     Write-Host "Exporting information, this could take some time..."
-    $FilePath = "$PSScriptRoot\Exported\$DGName-Members.csv"
-    Get-DistributionGroupMember -Identity $DGName | Select-Object Name, PrimarySMTPAddress | Export-CSV $FilePath -NoTypeInformation -Encoding UTF8
-    Write-Host "Exported members of $DGName to $FilePath" -ForegroundColor Green
+    $FilePath = "$PSScriptRoot\Exported\DistributionLists.csv"
+    Get-DistributionGroup | Select-Object DisplayName,PrimarySmtpAddress | Export-CSV $FilePath -NoTypeInformation -Encoding UTF8
+    Write-Host "Exported list of distribution groups to $FilePath" -ForegroundColor Green
     Write-Host "`n"
 }
 
@@ -134,25 +190,59 @@ Function ExportDelegatePermissions {
     
     while($exportloop) {
         $Option = Read-Host -Prompt "Please select one of the following options.
-            [0] Export delegate permissions for ALL mailboxes
-            [1] Export delegate permissions for a particular mailbox
+            [0] Export delegate permissions for ALL mailboxes (CSV per mailbox)
+            [1] Export delegate permissions for SHARED mailboxes (CSV per mailbox)
+            [2] Export delegate permissions for a particular mailbox (Single CSV)
+            [3] Export delegate permissions for ALL mailboxes (Single CSV)
+            [4] Export delegate permissions for SHARED mailboxes (Single CSV)
+            [E] Return to main menu
             "
         switch ($Option) {
             0 {  
                 Write-Host "`n"
                 Write-Host "Exporting information, this could take some time..."
-                $FilePath = "$PSScriptRoot\Exported\All-delegates-list.csv"
-                $FilePath2 = "$PSScriptRoot\Exported\All-SendAs-list.csv"
-
-                Get-Mailbox -resultsize unlimited | Get-MailboxPermission | Select-Object Identity,User,AccessRights  | Where-Object {($_.user -ne "NT AUTHORITY\SELF")} |  Export-Csv -Path $FilePath -NoTypeInformation
-                Write-Host "Exported delegate permissions list to $FilePath" -ForegroundColor Green
                 
-                Get-Mailbox -resultsize unlimited | Get-RecipientPermission | select-object Identity,Trustee,AccessRights | Where-Object {($_.trustee -ne "NT AUTHORITY\SELF")} | Export-Csv -Path $FilePath2 -NoTypeInformation
-                Write-Host "Exported send as permissions list to $FilePath2" -ForegroundColor Green
+
+                $mball = Get-Mailbox -resultsize unlimited
+                ForEach($mb in $mball) {
+                    $account = $mb.PrimarySMTPAddress
+                    $accountname = $mb.DisplayName
+                
+                    $FilePath = "$PSScriptRoot\Exported\$account-delegates-list.csv"
+                    $FilePath2 = "$PSScriptRoot\Exported\$account-SendAs-list.csv"
+
+                    Get-Mailbox -identity $Account | Get-MailboxPermission | Select-Object Identity,User,AccessRights  | Where-Object {($_.user -ne "NT AUTHORITY\SELF")} | Export-Csv -Path $FilePath -NoTypeInformation
+                    Write-Host "Exported delegate permissions list for $accountname to $FilePath" -ForegroundColor Green
+
+                    Get-Mailbox -identity $Account | Get-RecipientPermission | select-object Identity,Trustee,AccessRights | Where-Object {($_.trustee -ne "NT AUTHORITY\SELF")} | Export-Csv -Path $FilePath2 -NoTypeInformation
+                    Write-Host "Exported send as permissions list for $accountname to $FilePath2" -ForegroundColor Green
+                }
 
                 $exportloop = $false
-            }       
+            }  
             1 {
+            
+                Write-Host "`n"
+                Write-Host "Exporting information, this could take some time..."
+
+                $mball = Get-Mailbox -resultsize unlimited -Filter {recipienttypedetails -eq "SharedMailbox"}
+                ForEach($mb in $mball) {
+                    $account = $mb.PrimarySMTPAddress
+                    $accountname = $mb.DisplayName
+                
+                    $FilePath = "$PSScriptRoot\Exported\$accountname-delegates-list.csv"
+                    $FilePath2 = "$PSScriptRoot\Exported\$accountname-SendAs-list.csv"
+
+                    Get-Mailbox -identity $Account | Get-MailboxPermission | Select-Object Identity,User,AccessRights  | Where-Object {($_.user -ne "NT AUTHORITY\SELF")} | Export-Csv -Path $FilePath -NoTypeInformation
+                    Write-Host "Exported delegate permissions list for $accountname to $FilePath" -ForegroundColor Green
+
+                    Get-Mailbox -identity $Account | Get-RecipientPermission | select-object Identity,Trustee,AccessRights | Where-Object {($_.trustee -ne "NT AUTHORITY\SELF")} | Export-Csv -Path $FilePath2 -NoTypeInformation
+                    Write-Host "Exported send as permissions list for $accountname to $FilePath2" -ForegroundColor Green
+                }
+
+                $exportloop = $false
+            }     
+            2 {
 
                 Write-Host "`n"
                 $Account = Read-Host -Prompt "Please enter the email address for the mailbox you would like to export the delegates of"
@@ -168,6 +258,31 @@ Function ExportDelegatePermissions {
                 Get-Mailbox -identity $Account | Get-RecipientPermission | select-object Identity,Trustee,AccessRights | Where-Object {($_.trustee -ne "NT AUTHORITY\SELF")} | Export-Csv -Path $FilePath2 -NoTypeInformation
                 Write-Host "Exported send as permissions list to $FilePath2" -ForegroundColor Green
 
+                $exportloop = $false
+            }
+            3 {
+                $FilePath = "$PSScriptRoot\Exported\All-delegates-list.csv"
+                $FilePath2 = "$PSScriptRoot\Exported\All-SendAs-list.csv"
+
+                Get-Mailbox -resultsize unlimited | Get-MailboxPermission | Select-Object Identity,User,AccessRights  | Where-Object {($_.user -ne "NT AUTHORITY\SELF")} |  Export-Csv -Path $FilePath -NoTypeInformation
+                Write-Host "Exported delegate permissions list for ALL MAILBOXES to $FilePath" -ForegroundColor Green
+                
+                Get-Mailbox -resultsize unlimited | Get-RecipientPermission | select-object Identity,Trustee,AccessRights | Where-Object {($_.trustee -ne "NT AUTHORITY\SELF")} | Export-Csv -Path $FilePath2 -NoTypeInformation
+                Write-Host "Exported send as permissions list for ALL MAILBOXES to $FilePath2" -ForegroundColor Green
+                $exportloop = $false
+            }
+            4 {
+                $FilePath = "$PSScriptRoot\Exported\Sharedmailbox-delegates-list.csv"
+                $FilePath2 = "$PSScriptRoot\Exported\Sharedmailbox-SendAs-list.csv"
+
+                Get-Mailbox -resultsize unlimited -Filter {recipienttypedetails -eq "SharedMailbox"} | Get-MailboxPermission | Select-Object Identity,User,AccessRights  | Where-Object {($_.user -ne "NT AUTHORITY\SELF")} |  Export-Csv -Path $FilePath -NoTypeInformation
+                Write-Host "Exported delegate permissions list for SHARED MAILBOXES to $FilePath" -ForegroundColor Green
+                
+                Get-Mailbox -resultsize unlimited -Filter {recipienttypedetails -eq "SharedMailbox"} | Get-RecipientPermission | select-object Identity,Trustee,AccessRights | Where-Object {($_.trustee -ne "NT AUTHORITY\SELF")} | Export-Csv -Path $FilePath2 -NoTypeInformation
+                Write-Host "Exported send as permissions list for SHARED MAILBOXES to $FilePath2" -ForegroundColor Green
+                $exportloop = $false
+            }
+            E {
                 $exportloop = $false
             }
             default {
