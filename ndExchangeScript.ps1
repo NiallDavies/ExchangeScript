@@ -8,12 +8,13 @@ Function DisplayMenu() { # Main Menu of the script
           $choice = Read-Host -Prompt "Please select one of the following options:`n
                 [0]     Export list of mailboxes
                 [1]     Export folder sizes for a mailbox
-                [2]     Export list of distribution groups
-                [3]     Export distribution group members
-                [4]     Export delegate permissions list (Send As/Full Access)
-                [5]     Import contacts from CSV
-                [6]     Add members to distribution group from CSV
-                [7]     Add user delegate permissions to mailboxes from CSV
+                [2]     Export distribution group members
+                [3]     Export list of distribution groups
+                [4]     Export list of Office365 group members
+                [5]     Export delegate permissions list (Send As/Full Access)
+                [6]     Import contacts from CSV
+                [7]     Add members to distribution group from CSV
+                [8]     Add user delegate permissions to mailboxes from CSV
                 [9999]  Enter custom Exchange Online commands in the current session (Advanced)
                 [E]     Exit script`n`n"
     
@@ -22,10 +23,11 @@ Function DisplayMenu() { # Main Menu of the script
                 1 { ExportFolderSize }
                 2 { ExportDistListMembers }
                 3 { ExportDistLists }
-                4 { ExportDelegatePermissions }
-                5 { ImportContacts }
-                6 { ImportToDistList }
-                7 { ImportDelegates }
+                4 { ExportGroupMembers }
+                5 { ExportDelegatePermissions }
+                6 { ImportContacts }
+                7 { ImportToDistList }
+                8 { ImportDelegates }
                 E { $menuloop = $false 
                         ExitScript }
                 9999 { $menuloop = $false }
@@ -154,6 +156,57 @@ Function ExportDistListMembers { # Exports Distribution group members to CSV fil
                     $DGName = $List.DisplayName
                     $FilePath = "$PSScriptRoot\Exported\$DGName-Members.csv"
                     Get-DistributionGroupMember -Identity $DGEmail | Select-Object Name, PrimarySMTPAddress | Export-CSV $FilePath -NoTypeInformation -Encoding UTF8
+                    Write-Host "Exported members of $DGName to $FilePath" -ForegroundColor Green
+                }
+
+               # Get-DistributionGroupMember | Select-Object Name, PrimarySMTPAddress | Export-CSV $FilePath -NoTypeInformation -Encoding UTF8
+                Write-Host "Done" -ForegroundColor Green
+                Write-Host "`n"
+                $exportloop = $false
+            }
+            E {
+                $exportloop = $false
+            }
+            default {
+                Write-Host "`n"
+                Write-Warning "Sorry, I didn't understand that!" 
+                Write-Host "`n"                
+            }
+        }
+    }
+    
+}
+
+Function ExportGroupMembers { # Exports Office365 group members to CSV file
+    Write-Host "`n"
+    $exportloop = $true
+    while($exportloop) {
+        $Option = Read-Host -Prompt "Please select one of the following options.
+            [0] Export members for ALL office365 groups
+            [1] Export delegate permissions for a particular office365 group
+            [E] Return to main menu
+            "
+        switch ($Option) { 
+            1 {
+                $DGName = Read-Host -Prompt "Please enter the name of the Office365 group you would like to export the members of"
+                Write-Host "Exporting information, this could take some time..."
+                $FilePath = "$PSScriptRoot\Exported\$DGName-GroupMembers.csv"
+                Get-UnifiedGroup -Identity $DGName | Get-UnifiedGroupLinks -LinkType Member | Select-Object DisplayName, PrimarySMTPAddress | Export-CSV $FilePath -NoTypeInformation -Encoding UTF8
+                Write-Host "Exported members of $DGName to $FilePath" -ForegroundColor Green
+                Write-Host "`n"
+                $exportloop = $false
+            }
+            0 {
+                
+                Write-Host "Exporting information, this could take some time..."
+                
+
+                $DL = Get-UnifiedGroup
+                ForEach ($List in $DL) {
+                    $DGEmail = $List.PrimarySMTPAddress
+                    $DGName = $List.DisplayName
+                    $FilePath = "$PSScriptRoot\Exported\$DGEmail-GroupMembers.csv"
+                    Get-UnifiedGroup -Identity $DGName | Get-UnifiedGroupLinks -LinkType Member | Select-Object DisplayName, PrimarySMTPAddress | Export-CSV $FilePath -NoTypeInformation -Encoding UTF8
                     Write-Host "Exported members of $DGName to $FilePath" -ForegroundColor Green
                 }
 
